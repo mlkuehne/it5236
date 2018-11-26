@@ -1,0 +1,6 @@
+{
+	"dbhost" 	 : "it5236dbinstance.c22jkoe0ajol.us-east-1.rds.amazonaws.com",
+	"dbuser" 	 : "it5236rdsuser",
+	"dbpassword" : "K1NDR3D_BLu3",
+	"dbname" 	 : "it5236"
+}

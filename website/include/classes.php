@@ -112,6 +112,97 @@ class Application {
             }
     }
     
+    
+    // Registers a new user
+    public function register($username, $password, $email, $registrationcode, &$errors) {
+        
+        $this->auditlog("register", "attempt: $username, $email, $registrationcode");
+        
+        // Validate the user input
+        $this->validateUsername($username, $errors);
+        $this->validatePassword($password, $errors);
+        $this->validateEmail($email, $errors);
+        if (empty($registrationcode)) {
+            $errors[] = "Missing registration code";
+        }
+        
+        // Only try to insert the data into the database if there are no validation errors
+        if (sizeof($errors) == 0) {
+            
+            // Hash the user's password
+            $passwordhash = password_hash($password, PASSWORD_DEFAULT);
+            
+            // Create a new user ID
+            $userid = bin2hex(random_bytes(16));
+
+			$url = "https://zc38m3om60.execute-api.us-east-1.amazonaws.com/default/registeruser";
+			$apikey = 'dkGsVXC5r54N0QL7lRWo73tI8qC1kofbGeycBI73';
+			$data = array(
+				'userid'=>$userid,
+				'username'=>$username,
+				'passwordHash'=>$passwordhash,
+				'email'=>$email,
+				'registrationcode'=>$registrationcode
+			);
+			$data_json = json_encode($data);
+
+			$ch = curl_init();
+			curl_setopt($ch, CURLOPT_URL, $url);
+			curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json', 'Content-Length: ' . strlen($data_json), 'x-api-key:'. $apikey ));
+			curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
+			curl_setopt($ch, CURLOPT_POSTFIELDS, $data_json);
+			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+			$response  = curl_exec($ch);
+			$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+			if ($response === FALSE) {
+				$errors[] = "An unexpected failure occurred contacting the web service.";
+			} else {
+
+				if($httpCode == 400) {
+					
+					// JSON was double-encoded, so it needs to be double decoded
+					$errorsList = json_decode(json_decode($response))->errors;
+					foreach ($errorsList as $err) {
+						$errors[] = $err;
+					}
+					if (sizeof($errors) == 0) {
+						$errors[] = "Bad input";
+					}
+
+				} else if($httpCode == 500) {
+
+					$errorsList = json_decode(json_decode($response))->errors;
+					foreach ($errorsList as $err) {
+						$errors[] = $err;
+					}
+					if (sizeof($errors) == 0) {
+						$errors[] = "Server error";
+					}
+
+				} else if($httpCode == 200) {
+
+					$this->sendValidationEmail($userid, $email, $errors);
+
+				}
+
+			}
+			
+			curl_close($ch);
+
+        } else {
+            $this->auditlog("register validation error", $errors);
+        }
+        
+        // Return TRUE if there are no errors, otherwise return FALSE
+        if (sizeof($errors) == 0){
+            return TRUE;
+        } else {
+            return FALSE;
+        }
+    }
+	
+	/* 	--- OLD FUNCTION
     // Registers a new user
     public function register($username, $password, $email, $registrationcode, &$errors) {
         
@@ -249,6 +340,8 @@ class Application {
         }
     }
     
+    */
+    
     // Send an email to validate the address
     protected function sendValidationEmail($userid, $email, &$errors) {
         
@@ -282,11 +375,11 @@ class Application {
             $pageLink = str_replace("register.php", "login.php", $pageLink);
             $to      = $email;
             $subject = 'Confirm your email address';
-            $message = "A request has been made to create an account at https://russellthackston.me for this email address. ".
+            $message = "A request has been made to create an account at https://chattersquawks.me for this email address. ".
                 "If you did not make this request, please ignore this message. No other action is necessary. ".
                 "To confirm this address, please click the following link: $pageLink?id=$validationid";
-            $headers = 'From: webmaster@russellthackston.me' . "\r\n" .
-                'Reply-To: webmaster@russellthackston.me' . "\r\n";
+            $headers = 'From: webmaster@chattersqawks.me' . "\r\n" .
+                'Reply-To: webmaster@chattersquawks.me' . "\r\n";
             
             mail($to, $subject, $message, $headers);
             
@@ -443,7 +536,55 @@ class Application {
         
     }
     
+    
     public function getUserRegistrations($userid, &$errors) {
+        
+        // Assume an empty list of regs
+        $regs = array();
+        
+		$url = "###Replace me with the URL to your Web API endpoint###?userid=" . $userid;
+		$ch = curl_init();
+		curl_setopt($ch, CURLOPT_URL, $url);
+		curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+		$response  = curl_exec($ch);
+		$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+		
+		if ($response === FALSE) {
+			$errors[] = "An unexpected failure occurred contacting the web service.";
+		} else {
+			if($httpCode == 400) {
+				
+				// JSON was double-encoded, so it needs to be double decoded
+				$errorsList = json_decode(json_decode($response))->errors;
+				foreach ($errorsList as $err) {
+					$errors[] = $err;
+				}
+				if (sizeof($errors) == 0) {
+					$errors[] = "Bad input";
+				}
+			} else if($httpCode == 500) {
+				$errorsList = json_decode(json_decode($response))->errors;
+				foreach ($errorsList as $err) {
+					$errors[] = $err;
+				}
+				if (sizeof($errors) == 0) {
+					$errors[] = "Server error";
+				}
+			} else if($httpCode == 200) {
+	            $this->auditlog("getUserRegistrations", "web service response => " . $response);
+				$regs = json_decode($response)->userregistrations;
+		        $this->auditlog("getUserRegistrations", "success");
+			}
+		}
+		
+		curl_close($ch);
+        // Return the list of users
+        return $regs;
+    }
+    
+/* ----- OLD FUNCTION
+	    public function getUserRegistrations($userid, &$errors) {
         
         // Assume an empty list of regs
         $regs = array();
@@ -482,6 +623,8 @@ class Application {
         // Return the list of users
         return $regs;
     }
+    
+    */
     
     // Updates a single user in the database and will return the $errors array listing any errors encountered
     public function updateUserPassword($userid, $password, &$errors) {
@@ -650,6 +793,8 @@ class Application {
     // Logs in an existing user and will return the $errors array listing any errors encountered
     public function login($username, $password, &$errors) {
         
+        $otp = bin2hex(random_bytes(3));
+        
         $this->debug("Login attempted");
         $this->auditlog("login", "attempt: $username, password length = ".strlen($password));
         
@@ -668,7 +813,7 @@ class Application {
             $dbh = $this->getConnection();
             
             // Construct a SQL statement to perform the insert operation
-            $sql = "SELECT userid, passwordhash, emailvalidated FROM users " .
+            $sql = "SELECT userid, passwordhash, email, emailvalidated FROM users " .
                 "WHERE username = :username";
             
             // Run the SQL select and capture the result code
@@ -713,6 +858,21 @@ class Application {
                     $userid = $row['userid'];
                     $this->newSession($userid, $errors);
                     $this->auditlog("login", "success: $username, $userid");
+					
+					$sql = "INSERT INTO otp (userid, otp) VALUES (:userid, :otp)";
+					$stmt = $dbh->prepare($sql);
+					$stmt->bindParam(":userid", $userid);
+					$stmt->bindParam(":otp", $otp);
+					$result = $stmt->execute();
+                    
+                    $to      = $row['email'];
+            		$subject = 'One Time Password';
+            		$message = "A request has been made to log in on your account at Chattersquawks. ".
+                	"Your one time password is: " . $otp;
+           			$headers = 'From: webmaster@chattersquawks.me' . "\r\n" .
+                	'Reply-To: webmaster@chattersquawks.me' . "\r\n";
+            
+            		mail($to, $subject, $message, $headers);
                     
                 }
                 
